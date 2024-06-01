@@ -27,8 +27,8 @@ H += (-1.2,"XXX") #coeficient can be complex
 
 Add a 2-qubit string coupling qubits i and j with X and Y:
 ```julia
-H += (2, 'Z', i, 'Z', j) # with a coeficient=2
-H += ('Z', i, 'Z', j) # with a coeficient=1
+H += (2, 'X', i, 'Y', j) # with a coeficient=2
+H += ('X', i, 'Y', j) # with a coeficient=1
 ```
 
 Add a 1-qubit string:
