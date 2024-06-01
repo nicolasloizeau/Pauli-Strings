@@ -1,0 +1,392 @@
+
+module pauli_strings
+
+export Operator, rand_local2, rand_local1, trace, opnorm, dagger, op_to_strings
+using Random
+using LinearAlgebra
+rng = MersenneTwister(0)
+
+"""
+operator as a sum of pauli string encoded like in
+https://journals.aps.org/pra/abstract/10.1103/PhysRevA.68.042318
+intialized as : o=Operator(N)
+where N is the number of qubits
+"""
+mutable struct Operator
+    N::Int
+    v::Vector{Int}
+    w::Vector{Int}
+    coef::Vector{Complex{Float64}}
+    function Operator(N::Int)
+        new(N, Int[], Int[], Complex{Float64}[])
+    end
+end
+
+"""number of Y in a pauli string"""
+function getdelta(pauli::String)
+    return count(c -> c == 'Y', pauli)
+end
+
+"""
+get v and w from ref
+https://journals.aps.org/pra/abstract/10.1103/PhysRevA.68.042318
+"""
+function getvw(pauli::String)
+    v::Int = 0
+    w::Int = 0
+    for k in 1:length(pauli)
+        if pauli[k] == 'X'
+            w += 2^(k-1)
+        end
+        if pauli[k] == 'Z'
+            v += 2^(k-1)
+        end
+        if pauli[k] == 'Y'
+            w += 2^(k-1)
+            v += 2^(k-1)
+        end
+    end
+    return v,w
+end
+
+"""
+add a pauli string term to an operator
+"""
+function add_string(o::Operator, pauli::String, J::Number)
+    v,w = getvw(pauli)
+    c = (1im)^getdelta(pauli)*J
+    push!(o.v, v)
+    push!(o.w, w)
+    push!(o.coef, c)
+end
+
+
+function Base.:+(o::Operator, term::Tuple{Number, Char, Int, Char, Int})
+    o1 = deepcopy(o)
+    J, Pi, i, Pj, j = term
+    pauli = fill('1', o1.N)
+    pauli[i] = Pi
+    pauli[j] = Pj
+    pauli = join(pauli)
+    add_string(o1, pauli, J)
+    return compress(o1)
+end
+
+
+function Base.:+(o::Operator, term::Tuple{Number, Char, Int})
+    o1 = deepcopy(o)
+    J, Pi, i = term
+    pauli = fill('1', o1.N)
+    pauli[i] = Pi
+    pauli = join(pauli)
+    add_string(o1, pauli, J)
+    return compress(o1)
+end
+
+Base.:+(o::Operator, term::Tuple{Char, Int, Char, Int}) = o+(1, term...)
+Base.:+(o::Operator, term::Tuple{Char, Int}) = o+(1, term...)
+
+function Base.:+(o::Operator, term::Tuple{Number, String})
+    o1 = deepcopy(o)
+    c, pauli = term
+    if o1.N != length(pauli)
+        error("The string needs to be of the same size as the operator")
+    end
+    add_string(o1, pauli, c)
+    return compress(o1)
+end
+
+Base.:+(o::Operator, term::String) = o+(1,term)
+Base.:-(o::Operator, term::String) = o+(-1,term)
+Base.:-(o::Operator, term::Tuple{Number, String}) = o+(-term[1], term[2])
+
+"""true if bit i of n is set"""
+function bit(n::Integer, i::Integer)
+    return (n & (1 << (i - 1))) != 0
+end
+
+"""convert v,w to a string and a phase"""
+function vw_to_string(v::Int, w::Int, N::Int)
+    string::String = ""
+    phase::Complex{Float64} = 1
+    for i in 1:N
+        if !bit(v,i) && !bit(w,i)
+            string *= '1'
+        end
+        if !bit(v,i) && bit(w,i)
+            string *= 'X'
+        end
+        if bit(v,i) && !bit(w,i)
+            string *= 'Z'
+        end
+        if bit(v,i) && bit(w,i)
+            string *= 'Y'
+            phase *= 1im
+        end
+    end
+    return string, phase
+end
+
+"""print an operator"""
+function Base.show(io::IO, o::Operator)
+    for i in 1:length(o.v)
+        pauli, phase = vw_to_string(o.v[i],o.w[i],o.N)
+        c = o.coef[i]/phase
+        println(io, "($c) ", pauli)
+    end
+    println("")
+end
+
+
+function Base.:+(o1::Operator, o2::Operator)
+    if o1.N != o2.N
+        error("Adding operators of different dimention")
+    end
+    o3 = Operator(o1.N)
+    o3.v = vcat(o1.v, o2.v)
+    o3.w = vcat(o1.w, o2.w)
+    o3.coef = vcat(o1.coef, o2.coef)
+    return compress(o3)
+end
+
+
+function Base.:+(o::Operator, a::Number)
+    o1 = deepcopy(o)
+    i = ione(o)
+    if i >=0
+        o1.coef[ione(o)] += a
+    else
+        push!(o1.coef, a)
+        push!(o1.v, 0)
+        push!(o1.w, 0)
+    end
+    return o1
+end
+
+Base.:+(a::Number, o::Operator) = o+a
+
+
+function Base.:*(o1::Operator, o2::Operator)
+    if o1.N != o2.N
+        error("Multiplying operators of different dimention")
+    end
+    o3 = Operator(o1.N)
+    d = Dict{Tuple{Int, Int}, Complex{Float64}}()
+    for i in 1:length(o1.v)
+        for j in 1:length(o2.v)
+            v = o1.v[i] ⊻ o2.v[j]
+            w = o1.w[i] ⊻ o2.w[j]
+            c = o1.coef[i] * o2.coef[j] * (-1)^count_ones(o1.v[i] & o2.w[j])
+            if haskey(d, (v,w))
+                d[(v,w)] += c
+            else
+                d[(v,w)] = c
+            end
+        end
+    end
+    for (v,w) in keys(d)
+        push!(o3.v, v)
+        push!(o3.w, w)
+        push!(o3.coef, d[(v,w)])
+    end
+    return o3
+end
+
+function Base.:*(o::Operator, a::Number)
+    o1 = deepcopy(o)
+    o1.coef .*= a
+    return o1
+end
+
+Base.:*(a::Number, o::Operator) = o*a
+
+
+function Base.:/(o::Operator, a::Number)
+    o1 = deepcopy(o)
+    o1.coef ./= a
+    return o1
+end
+
+Base.:-(o::Operator) = -1*o
+Base.:-(o1::Operator, o2::Operator) = o1+(-o2)
+Base.:-(o::Operator, a::Real) = o+(-a)
+Base.:-(a::Real, o::Operator) = a+(-o)
+
+
+"""
+Commutator. This is much faster than doing o1*o2-o2*o1
+"""
+function com(o1::Operator, o2::Operator)
+    if o1.N != o2.N
+        error("Commuting operators of different dimention")
+    end
+    o3 = Operator(o1.N)
+    d = Dict{Tuple{Int, Int}, Complex{Float64}}()
+    for i in 1:length(o1.v)
+        for j in 1:length(o2.v)
+            v = o1.v[i] ⊻ o2.v[j]
+            w = o1.w[i] ⊻ o2.w[j]
+            k = (-1)^count_ones(o1.v[i] & o2.w[j]) - (-1)^count_ones(o1.w[i] & o2.v[j])
+            if k != 0
+                c = o1.coef[i] * o2.coef[j] * k
+                if haskey(d, (v,w))
+                    d[(v,w)] += c
+                else
+                    d[(v,w)] = c
+                end
+            end
+        end
+    end
+    for (v,w) in keys(d)
+        push!(o3.v, v)
+        push!(o3.w, w)
+        push!(o3.coef, d[(v,w)])
+    end
+    return o3
+end
+
+
+"""
+accumulate terms with the same pauli string
+"""
+function compress(o::Operator)
+    o1 = Operator(o.N)
+    vw = Set{Tuple{Int, Int}}(zip(o.v, o.w))
+    d = Dict{Tuple{Int, Int}, Complex{Float64}}(zip(vw, zeros(length(vw))))
+    for i in 1:length(o)
+        v = o.v[i]
+        w = o.w[i]
+        d[(v,w)] += o.coef[i]
+    end
+    for (v,w) in keys(d)
+        if abs(d[(v,w)])>1e-20
+            push!(o1.v, v)
+            push!(o1.w, w)
+            push!(o1.coef, d[(v,w)])
+        end
+    end
+    return o1
+end
+
+"""random 2-local operator"""
+function rand_local2(N::Int)
+    o = Operator(N)
+    for i in 1:N
+        for j in 1:N
+            for k in ['X', 'Y', 'Z']
+                for l in ['X', 'Y', 'Z']
+                    o += (randn(rng, Float64), k, i, l, j)
+                end
+            end
+        end
+    end
+    return compress(o)
+end
+
+"""random 1-local operator"""
+function rand_local1(N::Int)
+    o = Operator(N)
+    for i in 1:N
+        for k in ['X', 'Y', 'Z']
+            o += (randn(rng, Float64), k, i)
+        end
+    end
+    return compress(o)
+end
+
+"""return the index of the 1 string"""
+function ione(o::Operator)
+    for i in 1:length(o)
+        if o.v[i]==0 && o.w[i]==0
+            return i
+        end
+    end
+    return -1
+end
+
+
+function trace(o::Operator)
+    t = 0
+    for i in 1:length(o.v)
+        if o.v[i]==0 && o.w[i]==0
+            t += o.coef[i]
+        end
+    end
+    return t
+end
+
+"""frobenius norm"""
+function opnorm(o::Operator)
+    return norm(o.coef)*2^o.N
+end
+
+"""number of pauli strings in an operator"""
+function Base.length(container::Operator)
+    return length(container.v)
+end
+
+
+"""conjugate transpose"""
+function dagger(o::Operator)
+    o1 = deepcopy(o)
+    for i in 1:length(o1)
+        s = (-1)^count_ones(o1.v[i] & o1.w[i])
+        o1.coef[i] = s*conj(o1.coef[i])
+    end
+    return o1
+end
+
+"""
+takes an operator,
+return (coefs, strings)
+where coefs is a list of numbers and strings is a list of pauli string
+coefs[i] multiply strings[i]
+"""
+function op_to_strings(o::Operator)
+    strings::Vector{String} = []
+    coefs::Vector{Complex{Float64}} = []
+    for i in 1:length(o)
+        pauli,phase = vw_to_string(o.v[i], o.w[i], o.N)
+        push!(coefs, o.coef[i]/phase)
+        push!(strings, pauli)
+    end
+    return coefs, strings
+end
+
+"""number of non unit paulis in a string encoded by v,w"""
+function pauli_weight(v::Int,w::Int)
+    return count_ones(v | w)
+end
+
+"""remove all terms with coef < epsilon"""
+function cutoff(o::Operator, epsilon::Real)
+    o2 = Operator(o.N)
+    for i in 1:length(o)
+        if abs(o.coef[i])>epsilon
+            push!(o2.coef, o.coef[i])
+            push!(o2.v, o.v[i])
+            push!(o2.w, o.w[i])
+        end
+    end
+    return o2
+end
+
+"""
+remove all terms of length >= N
+i.e remove all M-local terms with M>N
+"""
+function truncate(o::Operator, N::Int)
+    o2 = Operator(o.N)
+    for i in 1:length(o)
+        v = o.v[i]
+        w = o.w[i]
+        if pauli_weight(v,w)<=N
+            push!(o2.coef, o.coef[i])
+            push!(o2.v, v)
+            push!(o2.w, w)
+        end
+    end
+    return o2
+end
+
+end
