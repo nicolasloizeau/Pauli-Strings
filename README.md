@@ -97,7 +97,7 @@ bs = pl.lanczos(H, O, steps, maxlength, epsilon)
 
 `maxlength` : maximum string lenght for truncate at every step
 
-`epsilion` : cutoff all terms smaller than epsilion
+`epsilon` : cutoff all terms smaller than epsilon
 
 Results for X in XX from https://journals.aps.org/prx/pdf/10.1103/PhysRevX.9.041017 :
 
