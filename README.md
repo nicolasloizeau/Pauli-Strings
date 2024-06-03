@@ -76,15 +76,29 @@ coefs, strings = ps.op_to_strings(H)
 `ps.truncate(H,M)` removes Pauli strings longer than M (returns a new Operator) 
 `ps.cutoff(H,c)` removes Pauli strings with coeficient smaller than c in absolute value (returns a new Operator) 
 
-## Lanczos
-Import the Lanczos
+
+## Time evolution
+
+`ps.rk4(H, O, dt; hbar=1, heisenberg=false)` performs a step of Runge Kutta and returns the new updated O(t+dt)
+
+H can be an Operator, or a function that takes a time and return an Operator. In case H is a function, a time also needs to be passed to `rk4(H, O, dt, t)`. O is an Observable or a density matrix to time evolve. 
+If evolving an observable in the heisenberg picture, set `heisenberg=true`.
+
+An example is in `time_evolve_example.jl`.
+The following will time evolve O in the Heisenberg picture from t=0 to t=tmax. At each step, we can truncate or apply a cutoff to keep the number of strings manageable 
 ```julia
-include("pauli_strings.jl")
-import .pauli_strings as ps
-include("lanczos.jl")
-import .pauli_lanczos as pl
+function evolve(H, O, M, eps, dt, tmax)
+    ts = range(0, stop=tmax step=dt)
+    for t in ProgressBar(ts)
+        O = ps.rk4(H, O, dt; heisenberg=true)
+        O = ps.truncate(O, M)
+        O = ps.cutoff(O, eps)
+    end
+    return O
+end
 ```
 
+## Lanczos
 Compute lanczos coeficients
 ```julia
 bs = pl.lanczos(H, O, steps, maxlength, epsilon)
