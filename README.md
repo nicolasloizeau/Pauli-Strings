@@ -73,8 +73,8 @@ coefs, strings = ps.op_to_strings(H)
 ```
 
 ## Truncate and Cutoff
-`ps.truncate(H,M)` remove Pauli strings longer than M (returns a new Operator) 
-`ps.cutoff(H,c)` remove Pauli strings with coeficient smaller than c in absolute value (returns a new Operator) 
+`ps.truncate(H,M)` removes Pauli strings longer than M (returns a new Operator) 
+`ps.cutoff(H,c)` removes Pauli strings with coeficient smaller than c in absolute value (returns a new Operator) 
 
 ## Lanczos
 Import the Lanczos
