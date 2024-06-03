@@ -4,6 +4,8 @@ module pauli_strings
 export Operator, rand_local2, rand_local1, trace, opnorm, dagger, op_to_strings
 using Random
 using LinearAlgebra
+using ProgressBars
+
 rng = MersenneTwister(0)
 
 """
@@ -312,7 +314,7 @@ function trace(o::Operator)
             t += o.coef[i]
         end
     end
-    return t
+    return t*2^o.N
 end
 
 """frobenius norm"""
@@ -387,6 +389,107 @@ function truncate(o::Operator, N::Int)
         end
     end
     return o2
+end
+
+"""
+v,w encode a string.
+return true if at least one index of keep is non unit in vw
+"""
+function tokeep(v::Int, w::Int, keep::Vector{Int})
+    for i in keep
+        if bit(v|w, i)
+            return true
+        end
+    end
+    return false
+end
+
+"""
+partial trace
+keep : list of qubits indices to keep starting at 1
+note that this still returns an operator of size N and doesnt permute the qubits
+this only gets rid of Pauli strings that have no support on keep
+and add their coeficient*2^NB to the identity string
+"""
+function ptrace(o::Operator, keep::Vector{Int})
+    o2 = Operator(o.N)
+    NA = length(keep)
+    NB = o.N-NA
+    for i in 1:length(o)
+        if tokeep(o.v[i], o.w[i], keep)
+            push!(o2.v, o.v[i])
+            push!(o2.w, o.w[i])
+            push!(o2.coef, o.coef[i])
+        else
+            o2 += o.coef[i]*2^NB/(1im)^count_ones(o.v[i] & o.w[i])
+        end
+    end
+    return o2
+end
+
+"""
+Runge–Kutta-4 with time independant Hamiltonian
+heisenberg : set to true if evolving an observable
+return : rho(t+dt)
+"""
+function rk4(H::Operator, rho::Operator, dt::Real; hbar::Real=1, heisenberg=false)
+    s = 1
+    if heisenberg
+        s = -1
+    end
+    k1 = -s*1im/hbar*com(H, rho)
+    k2 = -s*1im/hbar*com(H, rho+dt*k1/2)
+    k3 = -s*1im/hbar*com(H, rho+dt*k2/2)
+    k4 = -s*1im/hbar*com(H, rho+dt*k3)
+    return rho+(k1+2*k2+2*k3+k4)*dt/6
+end
+
+"""
+Runge–Kutta-4 with time dependant Hamiltonian
+H : function that takes a time and returns an operator
+heisenberg : set to true if evolving an observable
+return : rho(t+dt)
+"""
+function rk4(H::Function, rho::Operator, dt::Real, t::Real; hbar::Real=1, heisenberg=false)
+    s = 1
+    if heisenberg
+        s = -1
+    end
+    k1 = -s*1im/hbar*com(H(t), rho)
+    k2 = -s*1im/hbar*com(H(t+dt/2), rho+dt*k1/2)
+    k3 = -s*1im/hbar*com(H(t+dt/2), rho+dt*k2/2)
+    k4 = -s*1im/hbar*com(H(t+dt), rho+dt*k3)
+    return rho+(k1+2*k2+2*k3+k4)*dt/6
+end
+
+
+
+"
+https://journals.aps.org/prx/pdf/10.1103/PhysRevX.9.041017 equation 4
+H : hamiltonian MPO
+O : operator MPO
+steps : numer of lanczos steps
+maxl : maximum pauli string length. Used by truncate at every step
+epsilon : cutoff value. At every step a cutoff is applied to the pauli strings coeficients
+"
+function lanczos(H, O, steps, maxlength, epsilon)
+    N = H.N
+    O0 = deepcopy(O)
+    b = opnorm(com(H, O0))/sqrt(2^N)
+    O1 = com(H, O0)/b
+    bs = [b]
+    for n in ProgressBar(0:steps)
+        LHO = com(H, O1)
+        A = LHO-b*O0
+        b = opnorm(A)/sqrt(2^N)
+        O = A/b
+        O = truncate(O, maxlength)
+        O = cutoff(O, epsilon)
+        O0 = deepcopy(O1)
+        O1 = deepcopy(O)
+        push!(bs, b)
+    end
+    return bs
 end
 
 end
