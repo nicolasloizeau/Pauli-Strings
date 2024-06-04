@@ -6,8 +6,6 @@
 
 include("pauli_strings.jl")
 import .pauli_strings as ps
-include("lanczos.jl")
-import .pauli_lanczos as pl
 using PyPlot
 
 # XX hamiltonian: 1d chain with XX+YY interraction
@@ -39,8 +37,8 @@ ioff()
 
 # M is the max pauli string length
 for M in (4,8,16)
-    bs = pl.lanczos(H, O, 20, M, 1e-15)
-    plot(bs, label="M=$M")
+    bs = ps.lanczos(H, O, 10, M, 1e-15)
+    plot(bs, label="maxlength=$M")
 end
 legend()
 title("N=$N")
