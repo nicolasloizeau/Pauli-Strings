@@ -319,7 +319,7 @@ end
 
 """frobenius norm"""
 function opnorm(o::Operator)
-    return norm(o.coef)*2^o.N
+    return norm(o.coef)*sqrt(2^o.N)
 end
 
 """number of pauli strings in an operator"""
@@ -432,16 +432,16 @@ Runge–Kutta-4 with time independant Hamiltonian
 heisenberg : set to true if evolving an observable
 return : rho(t+dt)
 """
-function rk4(H::Operator, rho::Operator, dt::Real; hbar::Real=1, heisenberg=false)
+function rk4(H::Operator, O::Operator, dt::Real; hbar::Real=1, heisenberg=false)
     s = 1
     if heisenberg
         s = -1
     end
-    k1 = -s*1im/hbar*com(H, rho)
-    k2 = -s*1im/hbar*com(H, rho+dt*k1/2)
-    k3 = -s*1im/hbar*com(H, rho+dt*k2/2)
-    k4 = -s*1im/hbar*com(H, rho+dt*k3)
-    return rho+(k1+2*k2+2*k3+k4)*dt/6
+    k1 = -s*1im/hbar*com(H, O)
+    k2 = -s*1im/hbar*com(H, O+dt*k1/2)
+    k3 = -s*1im/hbar*com(H, O+dt*k2/2)
+    k4 = -s*1im/hbar*com(H, O+dt*k3)
+    return O+(k1+2*k2+2*k3+k4)*dt/6
 end
 
 """
@@ -450,16 +450,16 @@ H : function that takes a time and returns an operator
 heisenberg : set to true if evolving an observable
 return : rho(t+dt)
 """
-function rk4(H::Function, rho::Operator, dt::Real, t::Real; hbar::Real=1, heisenberg=false)
+function rk4(H::Function, O::Operator, dt::Real, t::Real; hbar::Real=1, heisenberg=false)
     s = 1
     if heisenberg
         s = -1
     end
-    k1 = -s*1im/hbar*com(H(t), rho)
-    k2 = -s*1im/hbar*com(H(t+dt/2), rho+dt*k1/2)
-    k3 = -s*1im/hbar*com(H(t+dt/2), rho+dt*k2/2)
-    k4 = -s*1im/hbar*com(H(t+dt), rho+dt*k3)
-    return rho+(k1+2*k2+2*k3+k4)*dt/6
+    k1 = -s*1im/hbar*com(H(t), O)
+    k2 = -s*1im/hbar*com(H(t+dt/2), O+dt*k1/2)
+    k3 = -s*1im/hbar*com(H(t+dt/2), O+dt*k2/2)
+    k4 = -s*1im/hbar*com(H(t+dt), O+dt*k3)
+    return O+(k1+2*k2+2*k3+k4)*dt/6
 end
 
 
