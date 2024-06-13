@@ -72,9 +72,12 @@ Export a list of strings with coeficients:
 coefs, strings = ps.op_to_strings(H)
 ```
 
-## Truncate and Cutoff
+## Truncate, Cutoff, Trim
 `ps.truncate(H,M)` removes Pauli strings longer than M (returns a new Operator) 
 `ps.cutoff(H,c)` removes Pauli strings with coeficient smaller than c in absolute value (returns a new Operator) 
+`ps.trim(H,N)` keeps the first N trings with higest weight (returns a new Operator) 
+`ps.prune(H,alpha)` keeps terms with probability 1-exp(-alpha*abs(c)) (returns a new Operator) 
+
 
 
 ## Time evolution
@@ -109,9 +112,7 @@ bs = pl.lanczos(H, O, steps, maxlength, epsilon)
 
 `steps` : number of steps
 
-`maxlength` : maximum string lenght for truncate at every step
-
-`epsilon` : cutoff all terms smaller than epsilon
+`nterms` : maximum number of terms in the operator. Used by trim at every step
 
 Results for X in XX from https://journals.aps.org/prx/pdf/10.1103/PhysRevX.9.041017 :
 
