@@ -33,13 +33,15 @@ H = XX(N) #hamiltonian
 O = X(N) #operator
 O = O/ps.opnorm(O)
 
-ioff()
+ioff()#pyplot
 
-# M is the max pauli string length
-for M in (4,8,16)
-    bs = ps.lanczos(H, O, 10, M, 1e-15)
-    plot(bs, label="maxlength=$M")
+# nterms is the max pauli string length
+for p in (12,14,16,18)
+    @time bs = ps.lanczos(H, O, 20, 2^p; keepnorm=true)
+    plot(bs, label="trim: 2^$p")
 end
+
+
 legend()
 title("N=$N")
 savefig("lanczos_example.png")

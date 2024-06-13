@@ -5,6 +5,7 @@ export Operator, rand_local2, rand_local1, trace, opnorm, dagger, op_to_strings
 using Random
 using LinearAlgebra
 using ProgressBars
+using Dictionaries
 
 rng = MersenneTwister(0)
 
@@ -14,6 +15,7 @@ https://journals.aps.org/pra/abstract/10.1103/PhysRevA.68.042318
 intialized as : o=Operator(N)
 where N is the number of qubits
 """
+
 mutable struct Operator
     N::Int
     v::Vector{Int}
@@ -21,6 +23,9 @@ mutable struct Operator
     coef::Vector{Complex{Float64}}
     function Operator(N::Int)
         new(N, Int[], Int[], Complex{Float64}[])
+    end
+    function Operator(N::Int, v::Vector{Int}, w::Vector{Int}, coef::Vector{Complex{Float64}})
+        new(N, v, w, coef)
     end
 end
 
@@ -152,6 +157,23 @@ function Base.:+(o1::Operator, o2::Operator)
 end
 
 
+function add(o1::Operator, o2::Operator)
+    if o1.N != o2.N
+        error("Adding operators of different dimention")
+    end
+    d1 = Dict{Tuple{Int, Int}, Complex{Float64}}(zip(zip(o1.v, o1.w), o1.coef))
+    d2 = Dict{Tuple{Int, Int}, Complex{Float64}}(zip(zip(o2.v, o2.w), o2.coef))
+    d = mergewith(+, d1, d2)
+    o3 = Operator(o1.N)
+    vw =  collect(keys(d))
+    o3.v = [i[1] for i in vw]
+    o3.w = [i[2] for i in vw]
+    o3.coef =  collect(values(d))
+    return o3
+end
+
+
+
 function Base.:+(o::Operator, a::Number)
     o1 = deepcopy(o)
     i = ione(o)
@@ -173,16 +195,16 @@ function Base.:*(o1::Operator, o2::Operator)
         error("Multiplying operators of different dimention")
     end
     o3 = Operator(o1.N)
-    d = Dict{Tuple{Int, Int}, Complex{Float64}}()
+    d = UnorderedDictionary{Tuple{Int, Int}, Complex{Float64}}()
     for i in 1:length(o1.v)
         for j in 1:length(o2.v)
             v = o1.v[i] ⊻ o2.v[j]
             w = o1.w[i] ⊻ o2.w[j]
             c = o1.coef[i] * o2.coef[j] * (-1)^count_ones(o1.v[i] & o2.w[j])
-            if haskey(d, (v,w))
+            if isassigned(d, (v,w))
                 d[(v,w)] += c
             else
-                d[(v,w)] = c
+                insert!(d, (v,w), c)
             end
         end
     end
@@ -193,6 +215,7 @@ function Base.:*(o1::Operator, o2::Operator)
     end
     return o3
 end
+
 
 function Base.:*(o::Operator, a::Number)
     o1 = deepcopy(o)
@@ -223,7 +246,7 @@ function com(o1::Operator, o2::Operator)
         error("Commuting operators of different dimention")
     end
     o3 = Operator(o1.N)
-    d = Dict{Tuple{Int, Int}, Complex{Float64}}()
+    d = UnorderedDictionary{Tuple{Int, Int}, Complex{Float64}}()
     for i in 1:length(o1.v)
         for j in 1:length(o2.v)
             v = o1.v[i] ⊻ o2.v[j]
@@ -231,10 +254,10 @@ function com(o1::Operator, o2::Operator)
             k = (-1)^count_ones(o1.v[i] & o2.w[j]) - (-1)^count_ones(o1.w[i] & o2.v[j])
             if k != 0
                 c = o1.coef[i] * o2.coef[j] * k
-                if haskey(d, (v,w))
+                if isassigned(d, (v,w))
                     d[(v,w)] += c
                 else
-                    d[(v,w)] = c
+                    insert!(d, (v,w), c)
                 end
             end
         end
@@ -248,13 +271,14 @@ function com(o1::Operator, o2::Operator)
 end
 
 
+
 """
 accumulate terms with the same pauli string
 """
 function compress(o::Operator)
     o1 = Operator(o.N)
     vw = Set{Tuple{Int, Int}}(zip(o.v, o.w))
-    d = Dict{Tuple{Int, Int}, Complex{Float64}}(zip(vw, zeros(length(vw))))
+    d = UnorderedDictionary{Tuple{Int, Int}, Complex{Float64}}(vw, zeros(length(vw)))
     for i in 1:length(o)
         v = o.v[i]
         w = o.w[i]
@@ -361,7 +385,7 @@ function pauli_weight(v::Int,w::Int)
 end
 
 """remove all terms with coef < epsilon"""
-function cutoff(o::Operator, epsilon::Real)
+function cutoff(o::Operator, epsilon::Real; keepnorm::Bool = false)
     o2 = Operator(o.N)
     for i in 1:length(o)
         if abs(o.coef[i])>epsilon
@@ -370,14 +394,50 @@ function cutoff(o::Operator, epsilon::Real)
             push!(o2.w, o.w[i])
         end
     end
+    if keepnorm
+        return o2*opnorm(o)/opnorm(o2)
+    end
     return o2
+end
+
+"""
+keep terms with probability 1-exp(-alpha*abs(c)) where c is the weight of the term
+"""
+function prune(o::Operator, alpha::Real; keepnorm::Bool = false)
+    i = Int[]
+    for k in 1:length(o)
+        p = 1-exp(-alpha*abs(o.coef[k]))
+        if rand() < p
+            push!(i,k)
+        end
+    end
+    o1 = Operator(o.N, o.v[i], o.w[i], o.coef[i] )
+    if keepnorm
+        return o1*opnorm(o)/opnorm(o1)
+    end
+    return o1
+end
+
+"""
+keep the first N terms with larger coeficients
+"""
+function trim(o::Operator, N::Int; keepnorm::Bool = false)
+    if length(o)<=N
+        return deepcopy(o)
+    end
+    i = sortperm(abs.(o.coef), rev=true)[1:N]
+    o1 = Operator(o.N, o.v[i], o.w[i], o.coef[i] )
+    if keepnorm
+        return o1*opnorm(o)/opnorm(o1)
+    end
+    return o1
 end
 
 """
 remove all terms of length >= N
 i.e remove all M-local terms with M>N
 """
-function truncate(o::Operator, N::Int)
+function truncate(o::Operator, N::Int; keepnorm::Bool = false)
     o2 = Operator(o.N)
     for i in 1:length(o)
         v = o.v[i]
@@ -387,6 +447,9 @@ function truncate(o::Operator, N::Int)
             push!(o2.v, v)
             push!(o2.w, w)
         end
+    end
+    if keepnorm
+        return o2*opnorm(o)/opnorm(o2)
     end
     return o2
 end
@@ -469,10 +532,9 @@ https://journals.aps.org/prx/pdf/10.1103/PhysRevX.9.041017 equation 4
 H : hamiltonian MPO
 O : operator MPO
 steps : numer of lanczos steps
-maxl : maximum pauli string length. Used by truncate at every step
-epsilon : cutoff value. At every step a cutoff is applied to the pauli strings coeficients
+nterms : maximum number of terms in the operator. Used by trim at every step
 "
-function lanczos(H, O, steps, maxlength, epsilon)
+function lanczos(H, O, steps, nterms; keepnorm=true)
     N = H.N
     O0 = deepcopy(O)
     b = opnorm(com(H, O0))/sqrt(2^N)
@@ -483,8 +545,7 @@ function lanczos(H, O, steps, maxlength, epsilon)
         A = LHO-b*O0
         b = opnorm(A)/sqrt(2^N)
         O = A/b
-        O = truncate(O, maxlength)
-        O = cutoff(O, epsilon)
+        O = trim(O, nterms; keepnorm=keepnorm)
         O0 = deepcopy(O1)
         O1 = deepcopy(O)
         push!(bs, b)
