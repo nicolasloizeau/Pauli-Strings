@@ -28,7 +28,7 @@ function X(N)
 end
 
 
-N = 32 # system size
+N = 50 # system size
 H = XX(N) #hamiltonian
 O = X(N) #operator
 O = O/ps.opnorm(O)
@@ -36,13 +36,13 @@ O = O/ps.opnorm(O)
 ioff()#pyplot
 
 # nterms is the max pauli string length
-for p in (12,14,16,18)
+for p in (14,16,18,20)
     @time bs = ps.lanczos(H, O, 20, 2^p; keepnorm=true)
     plot(bs, label="trim: 2^$p")
 end
 
 
 legend()
-title("N=$N")
+title("N=$N spins")
 savefig("lanczos_example.png")
 show()
