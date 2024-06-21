@@ -104,7 +104,7 @@ end
 ## Lanczos
 Compute lanczos coeficients
 ```julia
-bs = pl.lanczos(H, O, steps, maxlength, epsilon)
+bs = pl.lanczos(H, O, steps, nterms)
 ```
 `H` : Hamiltonian
 
