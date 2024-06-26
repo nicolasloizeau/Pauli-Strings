@@ -67,6 +67,15 @@ function add_string(o::Operator, pauli::String, J::Number)
     push!(o.coef, c)
 end
 
+function string_from_inds(ind::Vector{Int})
+    l::Vector{Char} = []
+    paulis = ['1', 'X', 'Y', 'Z']
+    for i in ind
+        push!(l, paulis[i+1])
+    end
+    return join(l)
+end
+
 
 function Base.:+(o::Operator, term::Tuple{Number, Char, Int, Char, Int})
     o1 = deepcopy(o)
@@ -106,6 +115,13 @@ end
 Base.:+(o::Operator, term::String) = o+(1,term)
 Base.:-(o::Operator, term::String) = o+(-1,term)
 Base.:-(o::Operator, term::Tuple{Number, String}) = o+(-term[1], term[2])
+
+Base.:+(o::Operator, term::Tuple{Number, Vector{Int}}) = o+(term[1], string_from_inds(term[2]))
+Base.:-(o::Operator, term::Tuple{Number, Vector{Int}}) = o-(term[1], string_from_inds(term[2]))
+
+Base.:+(o::Operator, term::Vector{Int}) = o+(1, string_from_inds(term))
+Base.:-(o::Operator, term::Vector{Int}) = o-(1, string_from_inds(term))
+
 
 """true if bit i of n is set"""
 function bit(n::Integer, i::Integer)
@@ -252,8 +268,8 @@ function com(o1::Operator, o2::Operator)
             v = o1.v[i] ⊻ o2.v[j]
             w = o1.w[i] ⊻ o2.w[j]
             k = (-1)^count_ones(o1.v[i] & o2.w[j]) - (-1)^count_ones(o1.w[i] & o2.v[j])
+            c = o1.coef[i] * o2.coef[j] * k
             if k != 0
-                c = o1.coef[i] * o2.coef[j] * k
                 if isassigned(d, (v,w))
                     d[(v,w)] += c
                 else
@@ -525,7 +541,9 @@ function rk4(H::Function, O::Operator, dt::Real, t::Real; hbar::Real=1, heisenbe
     return O+(k1+2*k2+2*k3+k4)*dt/6
 end
 
-
+function norm_lanczos(O::Operator)
+    return opnorm(O)/sqrt(2^O.N)
+end
 
 "
 https://journals.aps.org/prx/pdf/10.1103/PhysRevX.9.041017 equation 4
@@ -534,16 +552,16 @@ O : operator MPO
 steps : numer of lanczos steps
 nterms : maximum number of terms in the operator. Used by trim at every step
 "
-function lanczos(H, O, steps, nterms; keepnorm=true)
+function lanczos(H::Operator, O::Operator, steps::Int, nterms::Int; keepnorm=true)
     N = H.N
     O0 = deepcopy(O)
-    b = opnorm(com(H, O0))/sqrt(2^N)
+    b = norm_lanczos(com(H, O0))
     O1 = com(H, O0)/b
     bs = [b]
-    for n in ProgressBar(0:steps)
+    for n in ProgressBar(0:steps-2)
         LHO = com(H, O1)
         A = LHO-b*O0
-        b = opnorm(A)/sqrt(2^N)
+        b = norm_lanczos(A)
         O = A/b
         O = trim(O, nterms; keepnorm=keepnorm)
         O0 = deepcopy(O1)

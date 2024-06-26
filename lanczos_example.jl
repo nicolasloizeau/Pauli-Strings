@@ -31,7 +31,7 @@ end
 N = 50 # system size
 H = XX(N) #hamiltonian
 O = X(N) #operator
-O = O/ps.opnorm(O)
+O = O/ps.norm_lanczos(O)
 
 ioff()#pyplot
 
@@ -39,10 +39,14 @@ ioff()#pyplot
 for p in (14,16,18,20)
     @time bs = ps.lanczos(H, O, 20, 2^p; keepnorm=true)
     plot(bs, label="trim: 2^$p")
+    println(length(bs))
 end
 
 
+
 legend()
-title("N=$N spins")
+ylabel(L"$b_n$")
+xlabel(L"$n$")
+title("X in XX, N=$N spins")
 savefig("lanczos_example.png")
 show()
