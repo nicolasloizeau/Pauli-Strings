@@ -1,7 +1,6 @@
 
-# lanczos example from :
-# https://journals.aps.org/prx/abstract/10.1103/PhysRevX.9.041017
-# figure 2, "X in XX"
+# example of time evolving Z_1 on a chaotic spin chain
+
 
 include("pauli_strings.jl")
 import .pauli_strings as ps
@@ -9,58 +8,63 @@ using PyPlot
 using ProgressBars
 
 
-# XX hamiltonian: 1d chain with XX+YY interraction
-function XX(N)
+# build a chaotic spin chain with periodic bc
+function chaotic_chain(N::Int)
     H = ps.Operator(N)
+    # XX interractions
     for j in 1:(N - 1)
-        H += ('X',j,'X',j+1)
-        H += ('Z',j,'Z',j+1)
+        H += "X",j,"X",j+1
     end
-    return H
-end
-
-# X local operator: X operator on each site
-function X(N)
-    H = ps.Operator(N)
+    H += "X",1,"X",N # close the chain
+    # fields
     for j in 1:N
-        H += ('X',j)
+        H += -1.05,"Z",j
+        H += 0.5,"X",j
     end
     return H
 end
 
 
 N = 32 # system size
-H = XX(N) #hamiltonian
-O = X(N) #operator
-
+H = chaotic_chain(N) #hamiltonian
+O = ps.Operator(N) #operator to time evolve
+O += "Z", 1 # Z on site 1
 
 ioff()
 
 
-# heisenberg evolution of the operator using rk4
-# plot tr(O*O(t))
-function evolve(H, O, M, eps, dt)
-    ts = range(0, stop=2, step=dt)
+# heisenberg evolution of the operator O using rk4
+# return tr(O(0)*O(t))/tr(O(t)^2)
+# M is the number of strings to keep at each step
+# noise is the amplitude of depolarizing noise
+function evolve(H, O, M, times, noise)
     echo = []
     O0 = deepcopy(O)
-    for t in ProgressBar(ts)
+    dt = times[2]-times[1]
+    for t in ProgressBar(times)
         push!(echo, ps.trace(O*ps.dagger(O0))/ps.trace(O0*O0))
-        O = ps.rk4(H, O, dt; heisenberg=true)
-        O = ps.truncate(O, M)
-        O = ps.cutoff(O, eps)
+        #preform one step of rk4, keep only M strings, do not discard O0
+        O = ps.rk4(H, O, dt; heisenberg=true, M=M,  keep=O0)
+        #add depolarizingn oise
+        O = ps.add_noise(O, noise*dt)
+        # keep the M strings with the largest weight. Do not discard O0
+        O = ps.trim(O, M; keep=O0)
     end
-    plot(ts, echo, label="cutoff=$eps")
+    return real.(echo)
 end
 
 plt.cla()
-# time evolve O for different cutoff values
-for eps in (0.1,0.06,0.02,0.01)
-    evolve(H, O, 100, eps, 0.1)
+# time evolve O for different trim values
+times = range(0, stop=5, step=0.05)
+noise = 0.01
+for trim in (10,12,14)
+    S = evolve(H, O, 2^trim, times, noise)
+    loglog(times, S) #plot S(t)
 end
 
 legend()
 title("N=$N")
 xlabel("t")
-ylabel("tr(O(0)*O(t))")
+ylabel(L"tr$(Z_1(0)*Z_1(t))$")
 savefig("time_evolve_example.png")
 show()

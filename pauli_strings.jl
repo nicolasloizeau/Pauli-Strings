@@ -15,7 +15,6 @@ https://journals.aps.org/pra/abstract/10.1103/PhysRevA.68.042318
 intialized as : o=Operator(N)
 where N is the number of qubits
 """
-
 mutable struct Operator
     N::Int
     v::Vector{Int}
@@ -101,6 +100,46 @@ end
 
 Base.:+(o::Operator, term::Tuple{Char, Int, Char, Int}) = o+(1, term...)
 Base.:+(o::Operator, term::Tuple{Char, Int}) = o+(1, term...)
+
+
+"""
+Main function to contruct spin operators in a user friendly way
+# Examples
+```
+O = Operator(4)
+O += 1, "X",1,"X",2
+O += 2, "S-",1,"S+",4
+```
+"""
+function Base.:+(o::Operator, args::Tuple{Number, Vararg{Any}})
+    term = Operator(o.N)+1
+    c = args[1]
+    for i in 2:2:length(args)
+        o2 = Operator(o.N)
+        symbol = args[i]::String
+        site = args[i+1]::Int
+        if occursin(symbol, "XYZ")
+            o2 += only(symbol), site
+        elseif occursin(symbol, "SxSySz")
+            o2 += 0.5, only(uppercase(symbol[2])), site
+        elseif symbol == "S+"
+            o2 += 0.5, 'Y', site
+            o2 += 0.5im, 'Z', site
+        elseif symbol == "S-"
+            o2 += 0.5, 'Y', site
+            o2 += -0.5im, 'Z', site
+        else
+            error("Allowed operators: X,Y,Z,Sx,Sy,Sz,S-,S+")
+        end
+        term *= o2
+    end
+    return compress(o+c*term)
+end
+Base.:+(o::Operator, args::Tuple{Vararg{Any}}) = o+(1, args...)
+Base.:-(o::Operator, args::Tuple{Number, Vararg{Any}}) = o+(-args[1], args[2:end]...)
+Base.:-(o::Operator, args::Tuple{Vararg{Any}}) = o+(-1, args...)
+
+
 
 function Base.:+(o::Operator, term::Tuple{Number, String})
     o1 = deepcopy(o)
@@ -257,7 +296,7 @@ Base.:-(a::Real, o::Operator) = a+(-o)
 """
 Commutator. This is much faster than doing o1*o2-o2*o1
 """
-function com(o1::Operator, o2::Operator)
+function com(o1::Operator, o2::Operator; epsilon::Real=0, maxlength::Int=1000)
     if o1.N != o2.N
         error("Commuting operators of different dimention")
     end
@@ -269,7 +308,7 @@ function com(o1::Operator, o2::Operator)
             w = o1.w[i] ⊻ o2.w[j]
             k = (-1)^count_ones(o1.v[i] & o2.w[j]) - (-1)^count_ones(o1.w[i] & o2.v[j])
             c = o1.coef[i] * o2.coef[j] * k
-            if k != 0
+            if (k != 0) && (abs(c)>epsilon) && pauli_weight(v,w)<maxlength
                 if isassigned(d, (v,w))
                     d[(v,w)] += c
                 else
@@ -434,14 +473,49 @@ function prune(o::Operator, alpha::Real; keepnorm::Bool = false)
     return o1
 end
 
+"""returns the position of (v,w) in O. return 0 if (v,w) not in O"""
+function posvw(v,w,O)
+    for i in 1:length(O)
+        if O.v[i] == v && O.w[i] == w
+            return i
+        end
+    end
+    return 0
+end
+
+"""
+add noise that make the long string decays
+https://arxiv.org/pdf/2407.12768
+"""
+function add_noise(o::Operator, g::Real)
+    o2 = deepcopy(o)
+    for i in 1:length(o)
+        o2.coef[i] *= exp(-pauli_weight(o.v[i],o.w[i])*g)
+    end
+    return o2
+end
+
 """
 keep the first N terms with larger coeficients
+keepnorm : set to true to keep the norm of o
+keep : an operator that specify a set of strings that cannot be removed
 """
-function trim(o::Operator, N::Int; keepnorm::Bool = false)
+function trim(o::Operator, N::Int; keepnorm::Bool = false, keep::Operator=Operator(N))
     if length(o)<=N
         return deepcopy(o)
     end
+    # keep the N first indices
     i = sortperm(abs.(o.coef), rev=true)[1:N]
+    # add the string to keep in case there was a specified string to keep
+    if length(keep) > 0
+        for tau in 1:length(keep) #for each string tau in the keep operator
+            # we check if tau is in o and has been removed
+            j = posvw(keep.v[tau], keep.w[tau], o)
+            if !(j in i) && j!=0
+                push!(i, j)
+            end
+        end
+    end
     o1 = Operator(o.N, o.v[i], o.w[i], o.coef[i] )
     if keepnorm
         return o1*opnorm(o)/opnorm(o1)
@@ -511,15 +585,19 @@ Runge–Kutta-4 with time independant Hamiltonian
 heisenberg : set to true if evolving an observable
 return : rho(t+dt)
 """
-function rk4(H::Operator, O::Operator, dt::Real; hbar::Real=1, heisenberg=false)
+function rk4(H::Operator, O::Operator, dt::Real; hbar::Real=1, heisenberg=false, M=2^20, keep::Operator=Operator(N))
     s = 1
     if heisenberg
         s = -1
     end
     k1 = -s*1im/hbar*com(H, O)
+    k1 = trim(k1, M; keep=keep)
     k2 = -s*1im/hbar*com(H, O+dt*k1/2)
+    k2 = trim(k2, M; keep=keep)
     k3 = -s*1im/hbar*com(H, O+dt*k2/2)
+    k3 = trim(k3, M; keep=keep)
     k4 = -s*1im/hbar*com(H, O+dt*k3)
+    k4 = trim(k4, M; keep=keep)
     return O+(k1+2*k2+2*k3+k4)*dt/6
 end
 
@@ -552,14 +630,41 @@ O : operator MPO
 steps : numer of lanczos steps
 nterms : maximum number of terms in the operator. Used by trim at every step
 "
-function lanczos(H::Operator, O::Operator, steps::Int, nterms::Int; keepnorm=true)
+function lanczos(H::Operator, O::Operator, steps::Int, nterms::Int; keepnorm=true, maxlength=1000)
     N = H.N
     O0 = deepcopy(O)
     b = norm_lanczos(com(H, O0))
     O1 = com(H, O0)/b
     bs = [b]
     for n in ProgressBar(0:steps-2)
-        LHO = com(H, O1)
+        LHO = com(H, O1; maxlength=maxlength)
+        A = LHO-b*O0
+        b = norm_lanczos(A)
+        O = A/b
+        O = trim(O, nterms; keepnorm=keepnorm)
+        O0 = deepcopy(O1)
+        O1 = deepcopy(O)
+        push!(bs, b)
+    end
+    return bs
+end
+
+
+"
+https://journals.aps.org/prx/pdf/10.1103/PhysRevX.9.041017 equation 4
+H : hamiltonian MPO
+O : operator MPO
+steps : numer of lanczos steps
+nterms : maximum number of terms in the operator. Used by trim at every step
+"
+function lanczoscutoff(H::Operator, O::Operator, steps::Int, epsilon::Real; keepnorm=true, nterms=2^28)
+    N = H.N
+    O0 = deepcopy(O)
+    b = norm_lanczos(com(H, O0; epsilon=epsilon))
+    O1 = com(H, O0; epsilon=epsilon)/b
+    bs = [b]
+    for n in ProgressBar(0:steps-2)
+        LHO = com(H, O1; epsilon=epsilon)
         A = LHO-b*O0
         b = norm_lanczos(A)
         O = A/b

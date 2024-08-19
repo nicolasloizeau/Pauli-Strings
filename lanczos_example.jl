@@ -12,8 +12,8 @@ using PyPlot
 function XX(N)
     H = ps.Operator(N)
     for j in 1:(N - 1)
-        H += ('X',j,'X',j+1)
-        H += ('Z',j,'Z',j+1)
+        H += "X",j,"X",j+1
+        H += "Z",j,"Z",j+1
     end
     return H
 end
@@ -22,7 +22,7 @@ end
 function X(N)
     H = ps.Operator(N)
     for j in 1:N
-        H += ('X',j)
+        H += "X",j
     end
     return H
 end
@@ -39,7 +39,6 @@ ioff()#pyplot
 for p in (14,16,18,20)
     @time bs = ps.lanczos(H, O, 20, 2^p; keepnorm=true)
     plot(bs, label="trim: 2^$p")
-    println(length(bs))
 end
 
 
