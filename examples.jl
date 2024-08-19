@@ -9,20 +9,23 @@ o = ps.Operator(3)
 o += "XYZ"
 
 # add a pauli string with a coeficient (o += 2XYZ)
-o += (2, "XYZ")
+o += 2, "XYZ"
+o += 2, [1,0,3]
+
 
 # add a 2-local term
-# a term is of the form (J, a, i, b, j), a and b are pauli types, i, and j are sites
+# a term is of the form (J, a, i, b, j), a and b are sites operator types, i, and j are sites
 # the following line means o+= 2 Z_2 Z_3
-o += (2, 'Z', 2, 'Z', 3)
+o += 2, "Z", 2, "Z", 3
+o += 4, "S+", 1, "S-", 2
 
-# no J is interpreted as J=1 
-o += ('Y', 2, 'Y', 3)
+# no J is interpreted as J=1
+o += "Y", 2, "Y", 3
 
 
 # add a 1-local term
 # add a Z operator at site 2
-o += (1, 'Z', 2)
+o += 1, "Z", 2
 
 # multiply two operators
 o1 = ps.Operator(3)
