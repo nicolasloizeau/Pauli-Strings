@@ -1,41 +1,43 @@
 # Pauli-Strings
-Basic matrix algebra using Pauli String represented as binary integers as in https://journals.aps.org/pra/abstract/10.1103/PhysRevA.68.042318
+Julia module for many-body quantum mechanics with Pauli string represented as binary integers (as in https://journals.aps.org/pra/abstract/10.1103/PhysRevA.68.042318).
 
 Defines an Operator type and operations on it.
 
-Examples are in `examples.jl` and `lanczos_example.jl`.
+Examples are in `examples.jl`, `lanczos_example.jl` and `time_evolve_example.jl`
 
 ## Initializing an operator
 
-Import the library and initialize a operator of 3 qubits
+Import the library and initialize a operator of 4 qubits
 ```julia
 include("pauli_strings.jl")
 import .pauli_strings as ps
-H = ps.Operator(3)
+H = ps.Operator(4)
 ```
 
 Add a Pauli strings to the operator
 ```julia
-H += "XYZ"
-H += "1YZ"
+H += "XYZ1"
+H += "1YZY"
 ```
 
 Add a Pauli string with a coeficient
 ```julia
-H += (-1.2,"XXX") #coeficient can be complex
+H += -1.2,"XXXZ" #coeficient can be complex
 ```
 
 Add a 2-qubit string coupling qubits i and j with X and Y:
 ```julia
-H += (2, 'X', i, 'Y', j) # with a coeficient=2
-H += ('X', i, 'Y', j) # with a coeficient=1
+H += 2, "X", i, "Y", j # with a coeficient=2
+H += "X", i, "Y", j # with a coeficient=1
 ```
 
 Add a 1-qubit string:
 ```julia
-H += (2, 'Z', i) # with a coeficient=2
-H += ('Z', i) # with a coeficient=1
+H += 2, "Z", i # with a coeficient=2
+H += "Z", i # with a coeficient=1
 ```
+
+Supported sites operators are `X`, `Y`, `Z`, `Sx`, `Sy`, `Sz`, `S+`, `S-`.
 
 ## Basic Algebra
 The Operator type supports the +,-,* operators with other Operators and Numbers:
@@ -72,12 +74,13 @@ Export a list of strings with coeficients:
 coefs, strings = ps.op_to_strings(H)
 ```
 
-## Truncate, Cutoff, Trim
+## Truncate, Cutoff, Trim, Noise
 `ps.truncate(H,M)` removes Pauli strings longer than M (returns a new Operator) 
 `ps.cutoff(H,c)` removes Pauli strings with coeficient smaller than c in absolute value (returns a new Operator) 
 `ps.trim(H,N)` keeps the first N trings with higest weight (returns a new Operator) 
 `ps.prune(H,alpha)` keeps terms with probability 1-exp(-alpha*abs(c)) (returns a new Operator) 
 
+`ps.add_noise(H,g)` adds depolarizing noise that make each strings decay like $e^{gw}$ where $w$ is the lenght of the string. This is usefull when used with `trim` to keep the number of strings manageable during time evolution.
 
 
 ## Time evolution
@@ -88,18 +91,22 @@ H can be an Operator, or a function that takes a time and return an Operator. In
 If evolving an observable in the heisenberg picture, set `heisenberg=true`.
 
 An example is in `time_evolve_example.jl`.
-The following will time evolve O in the Heisenberg picture from t=0 to t=tmax. At each step, we can truncate or apply a cutoff to keep the number of strings manageable 
+The following will time evolve O in the Heisenberg picture. At each step, we add depolarizing noise and trim the operator to keep the number of strings manageable 
 ```julia
-function evolve(H, O, M, eps, dt, tmax)
-    ts = range(0, stop=tmax step=dt)
-    for t in ProgressBar(ts)
-        O = ps.rk4(H, O, dt; heisenberg=true)
-        O = ps.truncate(O, M)
-        O = ps.cutoff(O, eps)
+function evolve(H, O, M, times, noise)
+    dt = times[2]-times[1]
+    for t in times
+        O = ps.rk4(H, O, dt; heisenberg=true, M=M) #preform one step of rk4, keep only M strings
+        O = ps.add_noise(O, noise*dt) #add depolarizingn noise
+        O = ps.trim(O, M) # keep the M strings with the largest weight
     end
     return O
 end
 ```
+
+Time evolution of the spin correlation function $\textup{Tr}(Z_1(0)Z_1(t))$ in the chaotic spin chain.
+Check time_evolve_example.jl to reproduce the plot.
+![plot](./time_evolve_example.png)
 
 ## Lanczos
 Compute lanczos coeficients
