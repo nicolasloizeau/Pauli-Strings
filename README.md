@@ -37,7 +37,7 @@ H += 2, "Z", i # with a coeficient=2
 H += "Z", i # with a coeficient=1
 ```
 
-Supported sites operators are `X`, `Y`, `Z`, `Sx`, `Sy`, `Sz`, `S+`, `S-`.
+Supported sites operators are `X`, `Y`, `Z`, `Sx`$=X/2$, `Sy`$=Y/2$, `Sz`$=Z/2$, `S+`$=(X+iY)/2$, `S-`$=(X-iY)/2$.
 
 ## Basic Algebra
 The Operator type supports the +,-,* operators with other Operators and Numbers:
