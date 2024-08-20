@@ -123,11 +123,11 @@ function Base.:+(o::Operator, args::Tuple{Number, Vararg{Any}})
         elseif occursin(symbol, "SxSySz")
             o2 += 0.5, only(uppercase(symbol[2])), site
         elseif symbol == "S+"
-            o2 += 0.5, 'Y', site
-            o2 += 0.5im, 'Z', site
+            o2 += 0.5, 'X', site
+            o2 += 0.5im, 'Y', site
         elseif symbol == "S-"
-            o2 += 0.5, 'Y', site
-            o2 += -0.5im, 'Z', site
+            o2 += 0.5, 'X', site
+            o2 += -0.5im, 'Y', site
         else
             error("Allowed operators: X,Y,Z,Sx,Sy,Sz,S-,S+")
         end
