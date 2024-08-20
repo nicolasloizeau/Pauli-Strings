@@ -35,6 +35,7 @@ Add a 1-qubit string:
 ```julia
 H += 2, "Z", i # with a coeficient=2
 H += "Z", i # with a coeficient=1
+H += "S+", i
 ```
 
 Supported sites operators are `X`, `Y`, `Z`, `Sx`$=X/2$, `Sy`$=Y/2$, `Sz`$=Z/2$, `S+`$=(X+iY)/2$, `S-`$=(X-iY)/2$.
